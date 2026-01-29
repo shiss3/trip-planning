@@ -1,9 +1,10 @@
+'use client'; // 确保是 Client Component
 import React, { useId, useState } from 'react';
 import { Location } from "@/app/generated/prisma/client";
 import {
     closestCenter,
     DndContext,
-    DragEndEvent,//引入必要的传感器组件
+    DragEndEvent,
     TouchSensor,
     MouseSensor,
     useSensor,
@@ -15,12 +16,14 @@ import {
     useSortable,
     verticalListSortingStrategy
 } from "@dnd-kit/sortable";
-import { reorderItinerary } from "@/lib/actions/reorder-itineraty";
 import { CSS } from "@dnd-kit/utilities";
+// [修改] 引入 Hook
+import { useTripSync } from '@/lib/hooks/useTripSync';
 
+// [修改] 接口需增加 initialVersion
 interface SortableItineraryProps {
     locations: Location[];
-    tripId: string;
+    tripId: string;// 从服务端传入的初始版本号
 }
 
 function SortableItem({ item }: { item: Location }) {
@@ -35,11 +38,9 @@ function SortableItem({ item }: { item: Location }) {
             style={{
                 transform: CSS.Transform.toString(transform),
                 transition,
-                // 拖拽时提高层级，并在移动端禁用默认的触摸操作以防止滚动冲突
                 zIndex: isDragging ? 50 : 'auto',
                 touchAction: 'none'
             }}
-            //UI适配：使用 flex-1 和 min-w-0 确保在小屏幕上文字能正确截断,防止挤压右侧内容
             className={`p-4 border rounded-md flex justify-between items-center transition-shadow bg-white ${
                 isDragging ? 'shadow-xl ring-2 ring-blue-500 opacity-80' : 'hover:shadow'
             }`}
@@ -59,26 +60,19 @@ function SortableItem({ item }: { item: Location }) {
     );
 }
 
-const SortableItinerary = ({ locations, tripId }: SortableItineraryProps) => {
+const SortableItinerary = ({ locations, tripId}: SortableItineraryProps) => {
     const id = useId();
     const [localLocation, setLocalLocation] = useState<Location[]>(locations);
 
-    // 定义传感器
+    // [修改] 初始化同步 Hook
+    const { triggerSync } = useTripSync(tripId);
+
     const sensors = useSensors(
-        // 鼠标传感器：为了防止点击时意外拖拽，设置移动 10px 后才视为拖拽
         useSensor(MouseSensor, {
-            activationConstraint: {
-                distance: 5,
-            },
+            activationConstraint: { distance: 5 },
         }),
-        // 触摸传感器（移动端核心）：
-        // 设置 delay: 250ms，意味着用户必须0.25秒才会触发拖拽。
-        // 这样普通的快速滑动仍然会触发页面滚动，不会误触拖拽。
         useSensor(TouchSensor, {
-            activationConstraint: {
-                delay: 100,
-                tolerance: 5, // 容忍度：长按时手指轻微抖动 5px 范围内不取消拖拽
-            },
+            activationConstraint: { delay: 100, tolerance: 5 },
         })
     );
 
@@ -89,7 +83,7 @@ const SortableItinerary = ({ locations, tripId }: SortableItineraryProps) => {
             const oldIndex = localLocation.findIndex((item) => item.id === active.id);
             const newIndex = localLocation.findIndex((item) => item.id === over.id);
 
-            // 乐观更新：先在前端更新 UI，让用户感觉“立刻”完成了
+            // 1. 乐观更新：立即计算并设置 UI
             const newLocationsOrder = arrayMove(
                 localLocation,
                 oldIndex,
@@ -98,22 +92,16 @@ const SortableItinerary = ({ locations, tripId }: SortableItineraryProps) => {
 
             setLocalLocation(newLocationsOrder);
 
-            // 后端同步
-            try {
-                await reorderItinerary(
-                    tripId,
-                    newLocationsOrder.map((item) => item.id)
-                );
-            } catch (error) {
-                console.error("Failed to reorder itinerary:", error);
-            }
+            // 2. [修改] 触发架构同步，而不是直接 await fetch
+            // 剩下的防抖、存储、版本管理全交给 Hook
+            triggerSync(newLocationsOrder.map((item) => item.id));
         }
     };
 
     return (
         <DndContext
-            id={id} // 显式传递 id 以避免 SSR hydration mismatch
-            sensors={sensors} // 绑定配置好的 sensors
+            id={id}
+            sensors={sensors}
             onDragEnd={handleDragEnd}
             collisionDetection={closestCenter}
         >

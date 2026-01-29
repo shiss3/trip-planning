@@ -132,7 +132,7 @@ const TripeDetailClient = ({trip}:TripDetailClientProps) => {
                                 </Link>
                             </div>
                         ) : (
-                            <SortableItinerary locations={trip.locations} tripId={trip.id} />
+                            <SortableItinerary locations={trip.locations} tripId={trip.id}/>
                         )}
                     </TabsContent>
                     <TabsContent value="map" className="space-y-6">

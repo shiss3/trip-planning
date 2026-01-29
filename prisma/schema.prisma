@@ -97,6 +97,7 @@ model Trip {
   locations   Location[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  lastModified BigInt @default(0)
 }
 
 model Location {
